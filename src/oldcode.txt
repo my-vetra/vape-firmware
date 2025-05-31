@@ -1,0 +1,271 @@
+#include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include "esp_sleep.h"
+#include "esp_timer.h"    // For esp_timer_get_time()
+#include <string>
+#include <cstdint>
+
+// Service and characteristic UUIDs
+#define SERVICE_UUID        "12345678-1234-5678-1234-56789abcdef0"
+#define TIMER_CHAR_UUID     "12345678-1234-5678-1234-56789abcdef1"
+#define SYNC_CHAR_UUID      "12345678-1234-5678-1234-56789abcdef3"
+
+// Hardware button pin
+#define BUTTON_PIN          0  // GPIO pin for the button
+
+// Idle BLE timeout (5 minutes)
+const unsigned long bleTimeout = 5 * 60 * 1000; // in ms
+
+// Default timer value: 5 minutes in ms
+RTC_DATA_ATTR unsigned long totalTime = 5 * 60 * 1000;
+
+// RTC_DATA_ATTR variables persist through deep sleep.
+// These are used to store the timer settings and time offset across sleep cycles.
+RTC_DATA_ATTR unsigned long startTime = 0;
+// timeOffset accumulates the elapsed time (in ms) across deep sleep cycles.
+RTC_DATA_ATTR unsigned long timeOffset = 0;
+
+// Tracks the last BLE-related activity (for idle timeout)
+unsigned long lastInteractionTime = 0;
+
+// Flags used for BLE activation
+volatile bool bleRequested = false;
+volatile bool bleEnabled = false;
+
+// Global pointers for BLE objects and callback objects.
+BLEServer *pServer = nullptr;
+BLECharacteristic *timerChar = nullptr;
+
+// Forward declarations of callback classes.
+class MyServerCallbacks;
+class TimerWriteCallbacks;
+class SyncWriteCallbacks;
+MyServerCallbacks *pMyServerCallbacks = nullptr;
+TimerWriteCallbacks *pTimerWriteCallbacks = nullptr;
+SyncWriteCallbacks *pSyncWriteCallbacks = nullptr;
+
+// Forward declaration for cleanup function.
+void cleanupBLEService();
+
+// ---------------------------------------------------------------------------
+// Helper function: returns "global" time in milliseconds.
+// It adds the persistent timeOffset (accumulated across deep sleep cycles)
+// to the current uptime (obtained from esp_timer_get_time()).
+unsigned long getGlobalTimeMs() {
+    return timeOffset + (esp_timer_get_time() / 1000UL);
+}
+
+// --- BLE Callbacks ---
+
+class MyServerCallbacks : public BLEServerCallbacks {
+public:
+    void onConnect(BLEServer* pServer) override {
+        Serial.println("Device connected");
+        lastInteractionTime = millis();  // Reset idle timer
+
+        // If no timer is running yet, start it now.
+        if (startTime == 0) {
+            startTime = getGlobalTimeMs();
+        }
+    }
+
+    void onDisconnect(BLEServer* pServer) override {
+        Serial.println("Device disconnected, turning off BLE.");
+        cleanupBLEService();
+    }
+};
+
+class TimerWriteCallbacks : public BLECharacteristicCallbacks {
+public:
+    void onWrite(BLECharacteristic *pCharacteristic) override {
+        std::string value = pCharacteristic->getValue();
+        if (!value.empty()) {
+            try {
+                unsigned long newTime = std::stoul(value);
+                totalTime = newTime;
+                // Restart the timer from the moment a new value is set.
+                startTime = getGlobalTimeMs();
+                Serial.printf("Timer set to: %lu ms\n", totalTime);
+                lastInteractionTime = millis();  // Reset idle timer
+            } catch (std::invalid_argument &e) {
+                Serial.println("Invalid timer value received.");
+            }
+        }
+    }
+};
+
+class SyncWriteCallbacks : public BLECharacteristicCallbacks {
+public:
+    // This helper packs totalTime and timeElapsed into an 8-byte buffer.
+    void packTimeData(uint8_t *buffer) {
+        // Calculate time elapsed since start (capped at totalTime)
+        unsigned long elapsed = getGlobalTimeMs() - startTime;
+        if(elapsed > totalTime) elapsed = totalTime;
+
+        // Pack totalTime (first 4 bytes) and elapsed (next 4 bytes) as little-endian.
+        buffer[0] = totalTime & 0xFF;
+        buffer[1] = (totalTime >> 8) & 0xFF;
+        buffer[2] = (totalTime >> 16) & 0xFF;
+        buffer[3] = (totalTime >> 24) & 0xFF;
+        buffer[4] = elapsed & 0xFF;
+        buffer[5] = (elapsed >> 8) & 0xFF;
+        buffer[6] = (elapsed >> 16) & 0xFF;
+        buffer[7] = (elapsed >> 24) & 0xFF;
+    }
+
+    void onWrite(BLECharacteristic *pCharacteristic) override {
+        // Reset idle timer.
+        lastInteractionTime = millis();
+
+        uint8_t data[8];
+        packTimeData(data);
+        // Set the binary value and notify.
+        pCharacteristic->setValue(data, sizeof(data));
+        pCharacteristic->notify();
+        Serial.println("SYNC write: Notified with totalTime and timeElapsed.");
+    }
+
+    // Optionally support onRead so the client can directly read the packed data.
+    void onRead(BLECharacteristic *pCharacteristic) override {
+        uint8_t data[8];
+        packTimeData(data);
+        pCharacteristic->setValue(data, sizeof(data));
+        Serial.println("SYNC read: Provided totalTime and timeElapsed.");
+    }
+};
+
+// --- ISR: Only set a flag (avoid non-ISR–safe calls) ---
+void IRAM_ATTR handleButtonPress() {
+    bleRequested = true;
+}
+
+// --- BLE Initialization Function ---
+void startBLEService() {
+    bleEnabled = true;
+    Serial.println("BLE Activated!");
+
+    BLEDevice::init("ESP32-C3 Timer");
+    pServer = BLEDevice::createServer();
+
+    pMyServerCallbacks = new MyServerCallbacks();
+    pServer->setCallbacks(pMyServerCallbacks);
+
+    BLEService *timerService = pServer->createService(SERVICE_UUID);
+
+    // Create TIMER characteristic for setting the timer.
+    timerChar = timerService->createCharacteristic(
+        TIMER_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE
+    );
+    pTimerWriteCallbacks = new TimerWriteCallbacks();
+    timerChar->setCallbacks(pTimerWriteCallbacks);
+
+    // Create SYNC characteristic that returns both totalTime and timeElapsed.
+    BLECharacteristic *syncChar = timerService->createCharacteristic(
+        SYNC_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
+    );
+    pSyncWriteCallbacks = new SyncWriteCallbacks();
+    syncChar->setCallbacks(pSyncWriteCallbacks);
+
+    timerService->start();
+
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(false);
+    pAdvertising->setMinPreferred(0x06);
+    pAdvertising->setMinPreferred(0x12);
+    BLEDevice::startAdvertising();
+
+    Serial.println("BLE Timer Service Started.");
+    lastInteractionTime = millis();
+}
+
+// --- Cleanup Function for BLE Service and Allocated Resources ---
+void cleanupBLEService() {
+    Serial.println("Cleaning up BLE service and freeing resources.");
+
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    if (pAdvertising) {
+        pAdvertising->stop();
+    }
+
+    if (pMyServerCallbacks) {
+        delete pMyServerCallbacks;
+        pMyServerCallbacks = nullptr;
+    }
+    if (pTimerWriteCallbacks) {
+        delete pTimerWriteCallbacks;
+        pTimerWriteCallbacks = nullptr;
+    }
+    if (pSyncWriteCallbacks) {
+        delete pSyncWriteCallbacks;
+        pSyncWriteCallbacks = nullptr;
+    }
+
+    BLEDevice::deinit();
+
+    if (pServer) {
+        delete pServer;
+        pServer = nullptr;
+    }
+
+    timerChar = nullptr;
+    bleEnabled = false;
+}
+
+// --- Setup and Loop ---
+
+void setup() {
+    Serial.begin(115200);
+    delay(100);
+
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    attachInterrupt(BUTTON_PIN, handleButtonPress, FALLING);
+
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
+    // Configure deep sleep wakeup using the GPIO wakeup API.
+    // Create a bit mask from BUTTON_PIN and set wakeup when the pin goes low.
+    esp_deep_sleep_enable_gpio_wakeup(1ULL << BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+#else
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0);
+#endif
+
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
+        Serial.println("Woke from deep sleep via GPIO wakeup.");
+        bleRequested = true;
+    }
+#else
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+        Serial.println("Woke from deep sleep via ext0 wakeup.");
+        bleRequested = true;
+    }
+#endif
+}
+
+void loop() {
+    if (bleRequested && !bleEnabled) {
+        bleRequested = false;
+        startBLEService();
+    }
+
+    if (bleEnabled) {
+        if (millis() - lastInteractionTime > bleTimeout) {
+            Serial.println("Idle timeout reached, disconnecting BLE.");
+            cleanupBLEService();
+        }
+    }
+
+    if (!bleEnabled) {
+        // Before entering deep sleep, update timeOffset with the current uptime.
+        // This adds the elapsed time in the current boot to the persistent offset.
+        timeOffset += esp_timer_get_time() / 1000UL;
+        Serial.println("Entering Deep Sleep Mode...");
+        delay(100);
+        esp_deep_sleep_start();
+    }
+
+    delay(10);
+}
