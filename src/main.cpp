@@ -5,9 +5,18 @@
 #include "GlobalVars.h"
 #include "nvs_flash.h"
 
+#include "puffTime.h"
+
+#include "state_machine.h"
+
 // GPIO pins
 #define BUTTON_PIN      2         // Pin used for waking up the ESP32
+// BUTTON_PIN = PUFF_PIN, MUST CHANGE
+
+
 #define COIL_CTRL_PIN   3         // Pin used to drive the transistor for the coil
+
+
 
 // Timeouts in milliseconds
 const unsigned long bleTimeout = 60 * 1000UL;      // 60 second BLE idle timeout
@@ -28,14 +37,29 @@ void IRAM_ATTR handleWakeup() {
 void setup() {
     delay(100);
 
+    
     // Set up the wakeup trigger pin.
     pinMode(BUTTON_PIN, INPUT_PULLDOWN);
     attachInterrupt(BUTTON_PIN, handleWakeup, RISING);
-
+    
     // Set up the coil control pin.
     pinMode(COIL_CTRL_PIN, OUTPUT);
     // Initially lock the coil (assume LOW = locked, HIGH = unlocked)
-    digitalWrite(COIL_CTRL_PIN, LOW);
+    digitalWrite(COIL_CTRL_PIN, HIGH); 
+    // digitalWrite(COIL_CTRL_PIN, LOW); 
+    
+
+
+
+    // Any time puff GPIO pin goes from rising to falling or vice versa, call puff_data_controller.
+    // I'm not sure if current goes to this pin when the vape is booting. If it does, we need to attach
+    // interrupts to puff_data_controller in the main loop. 
+    // pinMode(PUFF_PIN, OUTPUT); 
+    attachInterrupt(PUFF_PIN, handle_state, RISING); 
+    attachInterrupt(PUFF_PIN, handle_state, FALLING); 
+
+    // Put state_machine in WAIT state; 
+    init_state_machine(); 
 
     // Configure deep sleep wakeup on BUTTON_PIN.
 #if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
@@ -66,13 +90,13 @@ void loop() {
     // In the COIL_UNLOCK state, check if the unlock period has finished.
     else if (deviceState == COIL_UNLOCK && puffTaken) {
         deviceState = COIL_COUNTDOWN;
-        digitalWrite(COIL_CTRL_PIN, HIGH);
+        digitalWrite(COIL_CTRL_PIN, LOW);
         TimerManager::startCoilTimer();
     }
     
     else if (deviceState == COIL_COUNTDOWN) {
         if (TimerManager::getCoilRemaining() == 0) {
-            digitalWrite(COIL_CTRL_PIN, LOW);
+            digitalWrite(COIL_CTRL_PIN, HIGH);
             deviceState = COIL_LOCKED;
             puffTaken = false;
             TimerManager::startTimer();
