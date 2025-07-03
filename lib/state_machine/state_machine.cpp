@@ -23,7 +23,13 @@ void handle_state(){
             // NOTE: THIS IS NOT RIGHT, PUFF_COUNT SHOULD BE READ FROM MEMORY
             // THIS JUST RESETS puff_count every time and starts from the beginning
             puff_count = 0; 
-            current_state = PUFF_COUNTING; 
+
+            if(puff_count >= MAX_PUFFS){
+                current_state = LOCKDOWN;
+            }
+            else{
+                current_state = PUFF_COUNTING; 
+            } 
             break;
         
         case PUFF_COUNTING:
