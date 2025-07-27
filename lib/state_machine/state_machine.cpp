@@ -25,6 +25,7 @@ void fsm::handle_state_rising(){
             puff_count = 0; 
             puff_start_time = 0; 
             current_state = PUFF_COUNTING; 
+            Serial.println("Channging state tp PUFF_COUNTING");
         break; 
         
         case(PUFF_COUNTING):
@@ -55,7 +56,9 @@ void fsm::handle_state_falling(){
         case(PUFF_COUNTING):
             puff_duration = micros() - puff_start_time; 
             puff_start_time = 0; 
-            puff_count++; 
+            puff_count++;
+            Serial.println("Increasing puff count to: " + String(puff_count));
+
 
             // Needs to be done periodically, maybe RTOS?
             FsmData data; 

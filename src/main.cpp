@@ -36,7 +36,12 @@ void IRAM_ATTR handleWakeup() {
 
 void setup() {
     delay(100);
+    Serial.begin(115200);
+      while (!Serial) {
+    delay(10);
+    }
 
+    Serial.println("Hello from ESP32-C3!");
     fsm puff_counter; 
 
 
@@ -48,12 +53,12 @@ void setup() {
     // Set up the coil control pin.
     pinMode(COIL_CTRL_PIN, OUTPUT);
     // Initially lock the coil (assume LOW = locked, HIGH = unlocked)
-    digitalWrite(COIL_CTRL_PIN, HIGH); 
+    digitalWrite(COIL_CTRL_PIN, LOW); 
     // digitalWrite(COIL_CTRL_PIN, LOW); 
 
     // Block gate pin
-    pinMode(GATE_PIN, INPUT_PULLDOWN); 
-    attachInterrupt(GATE_PIN, handle_state, RISING); 
+    // pinMode(GATE_PIN, INPUT_PULLDOWN); 
+    // attachInterrupt(GATE_PIN, handle_state, RISING); 
     
 
 
@@ -63,7 +68,7 @@ void setup() {
     attachInterrupt(HEAT_PIN, puff_counter.handle_state_falling, FALLING); 
 
     // Put state_machine in WAIT state; 
-    init_state_machine(); 
+    // init_state_machine(); 
 
     // Configure deep sleep wakeup on BUTTON_PIN.
 #if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
@@ -74,6 +79,7 @@ void setup() {
 }
 
 void loop() {
+    Serial.println("Test print");
     // If BLE is active, check for the BLE idle timeout.
     if (bleManager.isActive()) {
         if (getRtcTimeMillis() - BLEManager::getLastInteraction() > bleTimeout) {
@@ -94,13 +100,13 @@ void loop() {
     // In the COIL_UNLOCK state, check if the unlock period has finished.
     else if (deviceState == COIL_UNLOCK && puffTaken) {
         deviceState = COIL_COUNTDOWN;
-        digitalWrite(COIL_CTRL_PIN, LOW);
+        digitalWrite(COIL_CTRL_PIN, HIGH);
         TimerManager::startCoilTimer();
     }
     
     else if (deviceState == COIL_COUNTDOWN) {
         if (TimerManager::getCoilRemaining() == 0) {
-            digitalWrite(COIL_CTRL_PIN, HIGH);
+            digitalWrite(COIL_CTRL_PIN, LOW);
             deviceState = COIL_LOCKED;
             puffTaken = false;
             TimerManager::startTimer();
