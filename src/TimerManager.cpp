@@ -3,7 +3,7 @@
 #include "GlobalVars.h"
 
 // Persistent timer variables
-RTC_DATA_ATTR unsigned long TimerManager::persistentDuration =  10 * 60 * 1000UL;  // Default: 10 minutes
+RTC_DATA_ATTR unsigned long TimerManager::persistentDuration =  1 * 60 * 1000UL;  // Default: 10 minutes
 RTC_DATA_ATTR unsigned long TimerManager::persistentStartTime = 0;
 // RTC_DATA_ATTR unsigned long TimerManager::lastUpdate = 0;
 unsigned long TimerManager::minimumTime = 10 * 60 * 1000UL;   // 10 minutes in ms

@@ -37,9 +37,13 @@ void IRAM_ATTR handleWakeup() {
 void setup() {
     delay(100);
     Serial.begin(115200);
-      while (!Serial) {
-    delay(10);
+    // Wait up to 2 seconds for Serial to be ready
+    unsigned long start = millis();
+    while (!Serial && millis() - start < 2000) {
+        delay(10);
     }
+
+    Serial.println("Hello from setup!");
 
     Serial.println("Hello from ESP32-C3!");
     fsm puff_counter; 
