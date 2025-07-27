@@ -3,6 +3,9 @@
 #ifndef GLOBAL_VARS_H
 #define GLOBAL_VARS_H
 
+// Need to discuss exactly how many bytes
+#define MSG_LEN 20
+
 // State machine for device operation
 enum DeviceState {
     COIL_LOCKED,   // BLE active, coil remains locked

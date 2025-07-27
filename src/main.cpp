@@ -37,6 +37,9 @@ void IRAM_ATTR handleWakeup() {
 void setup() {
     delay(100);
 
+    fsm puff_counter; 
+
+
     
     // Set up the wakeup trigger pin.
     pinMode(BUTTON_PIN, INPUT_PULLDOWN);
@@ -47,16 +50,17 @@ void setup() {
     // Initially lock the coil (assume LOW = locked, HIGH = unlocked)
     digitalWrite(COIL_CTRL_PIN, HIGH); 
     // digitalWrite(COIL_CTRL_PIN, LOW); 
+
+    // Block gate pin
+    pinMode(GATE_PIN, INPUT_PULLDOWN); 
+    attachInterrupt(GATE_PIN, handle_state, RISING); 
     
 
 
 
-    // Any time puff GPIO pin goes from rising to falling or vice versa, call puff_data_controller.
-    // I'm not sure if current goes to this pin when the vape is booting. If it does, we need to attach
-    // interrupts to puff_data_controller in the main loop. 
-    // pinMode(PUFF_PIN, OUTPUT); 
-    attachInterrupt(PUFF_PIN, handle_state, RISING); 
-    attachInterrupt(PUFF_PIN, handle_state, FALLING); 
+
+    attachInterrupt(HEAT_PIN, puff_counter.handle_state_rising, RISING); 
+    attachInterrupt(HEAT_PIN, puff_counter.handle_state_falling, FALLING); 
 
     // Put state_machine in WAIT state; 
     init_state_machine(); 
