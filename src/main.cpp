@@ -27,6 +27,8 @@ volatile bool puffTaken = false;
 // Global BLEManager instance
 BLEManager bleManager;
 
+fsm puff_counter_fsm; 
+
 // ISR for the wakeup (boot) trigger
 void IRAM_ATTR handleWakeup() {
     if (deviceState == COIL_UNLOCK) {
@@ -34,13 +36,18 @@ void IRAM_ATTR handleWakeup() {
     }
 }
 
+void IRAM_ATTR handlePuffCountRising(){
+    puff_counter_fsm.handle_state_rising(); 
+}
+
+void IRAM_ATTR handlePuffCountFalling(){
+    puff_counter_fsm.handle_state_falling(); 
+}
+
 void setup() {
     delay(100);
 
-    fsm puff_counter; 
-
-
-    
+    fsm puff_counter_fsm; 
     // Set up the wakeup trigger pin.
     pinMode(BUTTON_PIN, INPUT_PULLDOWN);
     attachInterrupt(BUTTON_PIN, handleWakeup, RISING);
@@ -59,8 +66,8 @@ void setup() {
 
 
 
-    attachInterrupt(HEAT_PIN, puff_counter.handle_state_rising, RISING); 
-    attachInterrupt(HEAT_PIN, puff_counter.handle_state_falling, FALLING); 
+    attachInterrupt(HEAT_PIN, handlePuffCountRising, RISING); 
+    attachInterrupt(HEAT_PIN, handlePuffCountFalling, FALLING); 
 
     // Put state_machine in WAIT state; 
     init_state_machine(); 
