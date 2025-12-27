@@ -130,7 +130,7 @@ void PersistenceManager::appendPuff(const PuffModel& puff) {
     PuffRecord* recs = reinterpret_cast<PuffRecord*>(getBlockPtr(PUFF_CH));
     PuffRecord& r = recs[cm.activeCount];
     r.tSec = puff.timestampSec;
-    r.durationSec = puff.puffDuration;
+    r.durationMs = puff.puffDuration;
     r.puffNumber = puff.puffNumber;
     r.phaseIndex = puff.phaseIndex;
     cm.activeCount++;

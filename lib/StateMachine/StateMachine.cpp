@@ -17,37 +17,30 @@
 // PuffTimer Implementation
 // -----------------------------------------------------------------------------
 
-StateMachine::PuffTimer::PuffTimer() : startTime(0), endTime(0), active(false) {}
+StateMachine::PuffTimer::PuffTimer() : startTime(0), active(false) {}
 
 void StateMachine::PuffTimer::start() {
     if (active) return;
-    startTime = epochSeconds();
+    startTime = (unsigned long)epochMillis();
     active = true;
-    endTime = 0;
-}
-
-void StateMachine::PuffTimer::stop() {
-    if (!active) {
-        Logger::error("[PuffTimer] stop() called before start()");
-        return;
-    }
-    endTime = epochSeconds();
-    active = false;
 }
 
 long StateMachine::PuffTimer::getDuration() const {
-    if (active || startTime == 0 || endTime == 0) {
-        Logger::error("[PuffTimer] getDuration() called before timer stopped or not started");
+    if (startTime == 0) {
+        Logger::error("[PuffTimer] getDuration() called before start()");
         return -1;
     }
-    unsigned long duration = (endTime - startTime);
-    Logger::infof("[PuffTimer] Duration (s): %lu", duration);
-    return duration;
+    unsigned long now = (unsigned long)epochMillis();
+    if (now < startTime) {
+        Logger::warning("[PuffTimer] current epoch earlier than startTime; returning 0");
+        return 0;
+    }
+    // Return elapsed milliseconds.
+    return static_cast<long>(now - startTime);
 }
 
 void StateMachine::PuffTimer::reset() {
     startTime = 0;
-    endTime = 0;
     active = false;
 }
 
@@ -118,20 +111,19 @@ void StateMachine::handle_state_falling() {
                 Logger::warning("[StateMachine] Falling edge detected before rising edge.");
                 return;
             }
-            puffTimer.stop();
             long duration = puffTimer.getDuration();
             puffTimer.reset();
-            if (duration != -1 && duration >= MIN_PUFF_DURATION_SECONDS) {
-                pendingPuff.puffDuration = (unsigned long)duration; // seconds
+            if (duration != -1 && duration >= (MIN_PUFF_DURATION_MILLISECONDS)) {
+                pendingPuff.puffDuration = (unsigned long)duration;
                 pendingPuff.puffNumber = getPuffNumber();
                 puffs.push_back(pendingPuff);
                 currPuff = &puffs.back();
                 PersistenceManager::instance().appendPuff(*currPuff);
                 char ts[32];
                 if (epochToTimestamp(currPuff->timestampSec, ts, sizeof(ts))) {
-                    Logger::infof("[StateMachine] New Puff recorded (%d). Duration(s): (%lu) at %s", currPuff->puffNumber, currPuff->puffDuration, ts);
+                    Logger::infof("[StateMachine] New Puff recorded (%d). Duration(ms): %lu ms at %s", currPuff->puffNumber, currPuff->puffDuration, ts);
                 } else {
-                    Logger::infof("[StateMachine] New Puff recorded (%d). Duration(s): (%lu) at (%u)", currPuff->puffNumber, currPuff->puffDuration, currPuff->timestampSec);
+                    Logger::infof("[StateMachine] New Puff recorded (%d). Duration(ms): %lu ms at (%u)", currPuff->puffNumber, currPuff->puffDuration, currPuff->timestampSec);
                 }
                 BLEManager::instance().notifyNewPuff(*currPuff);
                 if (currPhase) {
@@ -147,8 +139,11 @@ void StateMachine::handle_state_falling() {
                         Logger::errorf("[StateMachine] Exceeded max puffs %d, malfunction detected.", currPhase->maxPuffs);
                     }
                 }
+            } else {
+                Logger::infof("Invalid puff duration (%ld ms); ignoring.", duration);
             }
             hasPendingPuff = false;
+            pendingPuff = PuffModel{};
             break;
         }
         case LOCKDOWN: {
@@ -240,7 +235,7 @@ void StateMachine::reconstructFromStorage() {
     // Rebuild puff list from storage
     puffs.clear();
     PersistenceManager::instance().forEachPuff([this](const PersistenceManager::PuffRecord& rec){
-        PuffModel pm; pm.puffNumber = rec.puffNumber; pm.phaseIndex = rec.phaseIndex; pm.puffDuration = rec.durationSec; pm.timestampSec = rec.tSec; puffs.push_back(pm); });
+        PuffModel pm; pm.puffNumber = rec.puffNumber; pm.phaseIndex = rec.phaseIndex; pm.puffDuration = rec.durationMs; pm.timestampSec = rec.tSec; puffs.push_back(pm); });
     if (!puffs.empty()) { currPuff = &puffs.back(); }
 
     // If nothing was loaded at all, keep constructor-initialized defaults

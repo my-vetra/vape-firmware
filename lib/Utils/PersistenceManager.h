@@ -73,10 +73,10 @@ public:
      * @brief Puff record structure (packed).
      */
     struct PuffRecord {
-        uint32_t tSec;
-        uint32_t durationSec;
-        uint16_t puffNumber;
-        uint16_t phaseIndex;
+        uint32_t tSec;         ///< Puff timestamp (epoch seconds)
+        uint32_t durationMs;   ///< Puff duration (milliseconds)
+        uint16_t puffNumber;   ///< Puff sequence number
+        uint16_t phaseIndex;   ///< Phase index
     } __attribute__((packed));
 
     /**

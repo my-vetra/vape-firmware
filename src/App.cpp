@@ -10,6 +10,7 @@
 #include "PersistenceManager.h"
 #include "Timer.h"
 #include "LogBuffer.h"
+#include "Debounce.h"
 
 // -----------------------------------------------------------------------------
 // Global ISR Flags
@@ -28,11 +29,19 @@ static volatile bool s_puff_falling_pending = false;
  */
 void IRAM_ATTR heatIsr() {
     int state = digitalRead(HEAT_PIN);
-    if (state == HIGH) {
+    if (DebounceManager::instance().active()) {
+        DebounceManager::instance().touch();
+        return;
+    } else if (state == HIGH) {
+        // Logger::infof("Device state: %s", Device::getState());
         s_puff_rising_pending = true;
-    } else {
-        s_puff_falling_pending = true;
+        DebounceManager::instance().start(s_puff_falling_pending, true);
     }
+    // if (state == HIGH) {
+    //     s_puff_rising_pending = true;
+    // } else {
+    //     s_puff_falling_pending = true;
+    // }
 }
 
 /**
@@ -92,6 +101,9 @@ void App::setup() {
 void App::loop() {
     if (!bleManager) bleManager = &BLEManager::instance();
     if (!puffCounterSm) puffCounterSm = &StateMachine::instance();
+
+    // Allow debounce manager to apply any pending changes
+    DebounceManager::instance().poll();
 
     // Drain ISR events in task context
     bool wake = false, rise = false, fall = false;

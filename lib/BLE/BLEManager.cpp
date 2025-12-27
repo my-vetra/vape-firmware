@@ -197,7 +197,7 @@ void BLEManager::PuffsCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
         if (payloadIdx + BLEManager::PUFF_ENTRY > sizeof(payload)) break; // (redundant) guard
         BLEManager::writeLE(&payload[payloadIdx], pf.puffNumber);
         BLEManager::writeLE32(&payload[payloadIdx + 2], (uint32_t)pf.timestampSec);
-        // Puff duration is seconds; frame stores it as uint16
+        // Puff duration is milliseconds; frame stores it as uint16 (will truncate above 65535ms)
         BLEManager::writeLE(&payload[payloadIdx + 6], (uint16_t)pf.puffDuration);
         payload[payloadIdx + 8] = (uint8_t)pf.phaseIndex;
         payloadIdx += BLEManager::PUFF_ENTRY;

@@ -1,4 +1,3 @@
-
 #pragma once
 
 /**
@@ -25,10 +24,12 @@
 #ifndef MAX_PUFFS
 #define MAX_PUFFS                         20            ///< Maximum puffs per phase
 #endif
+#ifndef NUM_PHASES
 #define NUM_PHASES                        5             ///< Number of phases
-// Minimum puff duration (in seconds). Set to 0 for tests; recommended >= 1 in production.
-#ifndef MIN_PUFF_DURATION_SECONDS
-#define MIN_PUFF_DURATION_SECONDS         1
+#endif
+// Minimum puff duration (in milliseconds). Set to 0 for tests; recommended >= 1000 in production.
+#ifndef MIN_PUFF_DURATION_MILLISECONDS
+#define MIN_PUFF_DURATION_MILLISECONDS   1000
 #endif
 // Phase duration (in seconds). Default: 1 hour.
 #ifndef PHASE_DURATION_SECONDS
@@ -56,7 +57,7 @@ enum state_t {
 struct PuffModel {
     int puffNumber;             ///< Puff number
     uint32_t timestampSec;      ///< Timestamp (seconds)
-    unsigned long puffDuration; ///< Puff duration (seconds)
+    unsigned long puffDuration; ///< Puff duration (milliseconds)
     int phaseIndex;             ///< Associated phase index
 };
 
@@ -114,13 +115,12 @@ private:
     public:
         PuffTimer();
         void start();
-        void stop();
+        // Returns elapsed seconds since start. If not started returns -1.
         long getDuration() const;
         void reset();
 
     private:
         unsigned long startTime;
-        unsigned long endTime;
         bool active;
     };
     PuffTimer puffTimer;
