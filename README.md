@@ -8,10 +8,6 @@ A production-grade embedded firmware for an ESP32-C3–based device that monitor
 
 ## Demo / Screenshots
 
-![Demo Screenshot](docs/demo-placeholder.png)
-
-![Architecture Diagram](docs/architecture-placeholder.png)
-
 ```mermaid
 flowchart LR
     ISR[GPIO ISR] -->|flags| LOOP[Main Loop]
